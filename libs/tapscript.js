@@ -313,6 +313,9 @@ let SHA224$3 = class SHA224 extends SHA256$3 {
  * @param message - data that would be hashed
  */
 const sha256$4 = wrapConstructor$3(() => new SHA256$3());
+//import {sha256 as _sha256} from 'https://bitvm.github.io/sha256/sha256.js'
+//const sha256$4 = _sha256;
+
 wrapConstructor$3(() => new SHA224$3());
 
 function within_size$1(data, size) {
@@ -11801,4 +11804,3 @@ class Transaction {
 }
 
 export { Address, TxInput$1 as Input, TxOutput$1 as Output, Script, TxSequence as Sequence, Signer, Tap, Transaction, Tx, TxWitness as Witness };
-//# sourceMappingURL=module.mjs.map

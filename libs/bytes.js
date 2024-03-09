@@ -17,13 +17,33 @@ export function fromHex(hexString) {
     return new Uint8Array(result);
 }
 
-import { sha256 } from '../libs/crypto.js';
-
-export const hashText = async data => {
-    return toHex(await sha256(fromUnicode(data)))
+/**
+ *
+ * Concatenates two buffers
+ *
+ * @param {ArrayBuffer} left The first buffer
+ * @param {ArrayBuffer} right The second buffer
+ * @return {ArrayBuffer} The concatenated buffer
+ *
+ */
+export function concat(left, right) {
+    const array = new Uint8Array(left.byteLength + right.byteLength);
+    array.set(new Uint8Array(left), 0);
+    array.set(new Uint8Array(right), left.byteLength);
+    return array.buffer;
 }
 
-export function toURI(text) {
-    const blob = new Blob([text], { type: 'text/plain' });
-    return URL.createObjectURL(blob);
+/**
+ *
+ * Pads a buffer with zeros to the right up to a given length.
+ *
+ * @param {ArrayBuffer} buffer The array.
+ * @param {number} n The number of bytes to return.
+ * @return {ArrayBuffer} The padded bytes.
+ *
+ */
+export function padRight(buffer, size) {
+    const array = new Uint8Array(size)
+    array.set(new Uint8Array(buffer), 0)
+    return array.buffer
 }

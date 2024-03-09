@@ -325,7 +325,9 @@ class SHA256 extends SHA2 {
  * SHA2-256 hash function
  * @param message - data that would be hashed
  */
+
 const sha256$1 = /* @__PURE__ */ wrapConstructor(() => new SHA256());
+
 
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 // 100 lines of code in the file are duplicated from noble-hashes (utils).
@@ -4801,4 +4803,3 @@ var shamir = /*#__PURE__*/Object.freeze({
 const noble = { secp: secp256k1, schnorr };
 
 export { _const as CONST, Field, Point, assert, ecdh, get_config, hash, hd, keys, math, merkle, noble, proof, shamir, sig as signer, util };
-//# sourceMappingURL=module.mjs.map

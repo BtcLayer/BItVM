@@ -20,14 +20,16 @@
 
 
 // Base URI of the Esplora Server API endpoint (mainnet)
-// const BASE_URI_MAINNET = `https://blockstream.info/api`;
-const BASE_URI_MAINNET = `https://mutinynet.com/api`;
+const BASE_URI_MAINNET = `https://blockstream.info/api`;
 
 // Base URI of the Esplora Server API endpoint (testnet)
 const BASE_URI_TESTNET = `https://blockstream.info/testnet/api`;
 
+// Base URI of the Esplora Server API endpoint (mutinynet)
+const BASE_URI_SIGNET = `https://mutinynet.com/api`;
+
 // Base URI
-let BASE_URI = BASE_URI_MAINNET;
+let BASE_URI = BASE_URI_SIGNET; // BASE_URI_MAINNET;
 
 export function useTestnet() {
     BASE_URI = BASE_URI_TESTNET;
@@ -35,6 +37,10 @@ export function useTestnet() {
 
 export function useMainnet() {
     BASE_URI = BASE_URI_MAINNET;
+}
+
+export function useSignet() {
+    BASE_URI = BASE_URI_SIGNET;
 }
 
 
@@ -142,9 +148,9 @@ export async function fetchTransaction(txid, format = '') {
     if(format) format = '/' + format;
     const response = await fetch(`${ BASE_URI }/tx/${ txid }${ format }`);
     await assertOK(response);
-    if (format === 'hex')
+    if (format === '/hex')
         return response.text();
-    if(format === 'raw')
+    if(format === '/raw')
         return response.arrayBuffer();
     return response.json();
 }
@@ -282,7 +288,7 @@ export async function fetchBlock(hash) {
  * 
  * @example
  *
- *     fetchBlock('00000000000000000024fb37364cbf81fd49cc2d51c09c75c35433c3a1945d04')
+ *     fetchBlockHeader('00000000000000000024fb37364cbf81fd49cc2d51c09c75c35433c3a1945d04')
  */
 export async function fetchBlockHeader(hash) {
     const response = await fetch(`${ BASE_URI }/block/${ hash }/header`);
@@ -324,6 +330,23 @@ export async function fetchTransationInBlock(blockHash, index) {
     return response.text();
 }
 
+
+/**
+ * Returns a list of all txids in the block.
+ *
+ * @param {String} blockHash
+ * @return {string} transaction hash
+ * 
+ * @example
+ *
+ *     fetchTXIDsInBlock('00000000000000000024fb37364cbf81fd49cc2d51c09c75c35433c3a1945d04');
+ */
+export async function fetchTXIDsInBlock(blockHash) {
+    const response = await fetch(`${ BASE_URI }/block/${ blockHash }/txids`);
+    await assertOK(response);
+    return response.json();
+}
+
 /**
  * Returns the height of the last block.
  *
@@ -336,7 +359,7 @@ export async function fetchTransationInBlock(blockHash, index) {
 export async function fetchLatestBlockHeight() {
     const response = await fetch(`${ BASE_URI }/blocks/tip/height`);
     await assertOK(response);
-    return response.text();
+    return parseInt(await response.text());
 }
 
 /**
