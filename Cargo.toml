@@ -1,47 +1,47 @@
 [package]
-name = "rust-bitcoin-u31-or-u30"
-version = "0.1.0"
-edition = "2021"
+name = "esplora-client"
+version = "0.7.0"
+edition = "2018"
+authors = ["Alekos Filini <alekos.filini@gmail.com>"]
+license = "MIT"
+homepage = "https://github.com/bitcoindevkit/rust-esplora-client"
+repository = "https://github.com/bitcoindevkit/rust-esplora-client"
+documentation = "https://docs.rs/esplora-client/"
+description = "Bitcoin Esplora API client library. Supports plaintext, TLS and Onion servers. Blocking or async"
+keywords = ["bitcoin", "esplora"]
+readme = "README.md"
+rust-version = "1.63.0"
+
+[lib]
+name = "esplora_client"
+path = "src/lib.rs"
 
 [dependencies]
-bitvm = { git = "https://github.com/BitVM/BitVM" }
-bitcoin-script = { git = "https://github.com/BitVM/rust-bitcoin-script" }
+serde = { version = "1.0", features = ["derive"] }
 bitcoin = { git = "https://github.com/rust-bitcoin/rust-bitcoin", branch = "bitvm" }
-bitcoin-scriptexec = { git = "https://github.com/BitVM/rust-bitcoin-scriptexec/" }
+hex = { package = "hex-conservative", version = "0.2" }
+log = "^0.4"
+minreq = { version = "2.11.0", features = ["json-using-serde"], optional = true }
+reqwest = { version = "0.11", optional = true, default-features = false, features = ["json"] }
 
-rand_chacha = "0.3.1"
-rand = "0.8.5"
+[dev-dependencies]
+serde_json = "1.0"
+tokio = { version = "1.20.1", features = ["full"] }
+electrsd = { version = "0.27.0", features = ["legacy", "esplora_a33e97e1", "bitcoind_25_0"] }
+lazy_static = "1.4.0"
 
-risc0-core = "0.21.0"
-p3-field = { git = "https://github.com/Plonky3/Plonky3" }
-p3-mersenne-31 = { git = "https://github.com/Plonky3/Plonky3" }
-
-ark-ff = "0.4.0"
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-incremental = true
-panic = 'abort'
-
-[profile.bench]
-opt-level = 3
-debug = false
-rpath = false
-lto = "thin"
-incremental = true
-debug-assertions = false
-
-[profile.dev]
-opt-level = 3
-panic = 'abort'
-
-[profile.test]
-opt-level = 3
-lto = "thin"
-incremental = true
-debug-assertions = true
-debug = true
+[features]
+default = ["blocking", "async", "async-https"]
+blocking = ["minreq", "minreq/proxy"]
+blocking-https = ["blocking", "minreq/https"]
+blocking-https-rustls = ["blocking", "minreq/https-rustls"]
+blocking-https-native = ["blocking", "minreq/https-native"]
+blocking-https-bundled = ["blocking", "minreq/https-bundled"]
+async = ["reqwest", "reqwest/socks"]
+async-https = ["async", "reqwest/default-tls"]
+async-https-native = ["async", "reqwest/native-tls"]
+async-https-rustls = ["async", "reqwest/rustls-tls"]
+async-https-rustls-manual-roots = ["async", "reqwest/rustls-tls-manual-roots"]
 
 [patch.crates-io.base58check]
 git = "https://github.com/rust-bitcoin/rust-bitcoin"

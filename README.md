@@ -1,15 +1,16 @@
+# rust-esplora-client
 
-# A fork of snarkjs for BitVM experiments
+Bitcoin Esplora API client library. Supports plaintext, TLS and Onion servers. Blocking or async.
 
-This is a fork of [iden3/snarkjs](https://github.com/iden3/snarkjs), with the following changes.
+<p>
+    <a href="https://crates.io/crates/esplora-client"><img alt="Crate Info" src="https://img.shields.io/crates/v/esplora-client.svg"/></a>
+    <a href="https://github.com/bitcoindevkit/rust-esplora-client/blob/master/LICENSE"><img alt="MIT Licensed" src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
+    <a href="https://github.com/bitcoindevkit/rust-esplora-client/actions/workflows/cont_integration.yml"><img alt="CI Status" src="https://github.com/bitcoindevkit/rust-esplora-client/workflows/Rust/badge.svg"></a>
+    <a href='https://coveralls.io/github/bitcoindevkit/rust-esplora-client?branch=master'><img src='https://coveralls.io/repos/github/bitcoindevkit/rust-esplora-client/badge.svg?branch=master' alt='Coverage Status' /></a>
+    <a href="https://docs.rs/esplora-client"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-esplora--client-green"/></a>
+    <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
+    <a href="https://discord.gg/d7NkDKm"><img alt="Chat on Discord" src="https://img.shields.io/discord/753336465005608961?logo=discord"></a>
+</p>
 
-- it uses Blake3 instead of Keccak for the transcript of fflonk.
-- it allows fflonk to use dummy, fixed randomness given an environment variable `USE_FIXED_RANDOMNESS=1`, which is to facilitate testing.
-
-Please refer to the original snarkjs for the detailed information. Credits should go to snarkjs, as our modifications are minor.
-
-## License
-
-Since snarkjs is part of the iden3 project, under copyright 2018 0KIMS association, and published with GPL-3 license.
-
-This repository therefore conforms to the requirements of GPL-3. Please refer to the original repository for copyright information. 
+## Minimum Supported Rust Version (MSRV)
+This library should compile with any combination of features with Rust 1.63.0.
