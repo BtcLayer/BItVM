@@ -1,41 +1,47 @@
 [package]
-name = "bitcoin-scriptexec"
-version = "0.0.0"
+name = "rust-bitcoin-u31-or-u30"
+version = "0.1.0"
 edition = "2021"
-description = "Bitcoin Script interpreter/executor"
-authors = ["Steven Roose <steven@roose.io>"]
-license = "CC0-1.0"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "btcexec"
-path = "src/main.rs"
-required-features = ["cli"]
-
-[features]
-default = ["cli", "wasm"]
-json = ["serde", "serde_json", "bitcoin/serde"]
-cli = ["json", "clap"]
-wasm = ["json", "wasm-bindgen", "serde-wasm-bindgen", "console_error_panic_hook", "getrandom/js"]
 
 [dependencies]
-# bitcoin = "0.31.0"
+bitvm = { git = "https://github.com/BitVM/BitVM" }
+bitcoin-script = { git = "https://github.com/BitVM/rust-bitcoin-script" }
 bitcoin = { git = "https://github.com/rust-bitcoin/rust-bitcoin", branch = "bitvm" }
-lazy_static = "1.4.0"
+bitcoin-scriptexec = { git = "https://github.com/BitVM/rust-bitcoin-scriptexec/" }
 
-# cli
-clap = { version = "4", features = [ "derive" ], optional = true }
+rand_chacha = "0.3.1"
+rand = "0.8.5"
 
-# wasm
-serde = { version = "1.0", features = [ "derive" ], optional = true }
-serde_json = { version = "1.0", optional = true }
-wasm-bindgen = { version = "0.2.87", optional = true }
-serde-wasm-bindgen = { version = "0.6.1", optional = true }
-console_error_panic_hook = { version = "0.1.7", optional = true }
-# I think we need to mention this for secp256k1-sys to work
-getrandom = { version = "0.2", optional = true }
+risc0-core = "0.21.0"
+p3-field = { git = "https://github.com/Plonky3/Plonky3" }
+p3-mersenne-31 = { git = "https://github.com/Plonky3/Plonky3" }
+
+ark-ff = "0.4.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+incremental = true
+panic = 'abort'
+
+[profile.bench]
+opt-level = 3
+debug = false
+rpath = false
+lto = "thin"
+incremental = true
+debug-assertions = false
+
+[profile.dev]
+opt-level = 3
+panic = 'abort'
+
+[profile.test]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug-assertions = true
+debug = true
 
 [patch.crates-io.base58check]
 git = "https://github.com/rust-bitcoin/rust-bitcoin"
