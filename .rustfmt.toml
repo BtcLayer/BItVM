@@ -1,0 +1,6 @@
+fn_single_line = true
+ignore = [
+    "src/utils/merkle.rs",
+]
+
+
