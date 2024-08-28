@@ -1,6 +1,1 @@
-fn_single_line = true
-ignore = [
-    "src/utils/merkle.rs",
-]
-
-
+use_small_heuristics = "Off"
