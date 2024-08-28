@@ -1,514 +1,274 @@
-#[allow(dead_code)]
-// Re-export what is needed to write treepp scripts
-pub mod treepp {
-    pub use crate::execute_script;
-    pub use crate::run;
-    pub use bitcoin_script::{script, Script};
+//! [![Rust](https://github.com/mappum/rust-bitcoin-script/workflows/Rust/badge.svg)](https://github.com/mappum/rust-bitcoin-script/actions?query=workflow%3ARust)
+//! [![crates.io](https://img.shields.io/crates/v/bitcoin-script.svg)](https://crates.io/crates/bitcoin-script)
+//! [![docs.rs](https://docs.rs/bitcoin-script/badge.svg)](https://docs.rs/bitcoin-script)
+//!
+//! **Bitcoin scripts inline in Rust.**
+//!
+//! ---
+//!
+//! ## Usage
+//!
+//! This crate exports a `script!` macro which can be used to build
+//! Bitcoin scripts. The macro returns the
+//! [`Script`](https://docs.rs/bitcoin/0.23.0/bitcoin/blockdata/script/struct.Script.html)
+//! type from the [`bitcoin`](https://github.com/rust-bitcoin/rust-bitcoin)
+//! crate.
+//!
+//! **Example:**
+//!
+//! ```rust
+//! # use bitcoin_script::{script, define_pushable};
+//!
+//! # define_pushable!();
+//! # let digest = 0;
+//! # let seller_pubkey_hash = 0;
+//! # let buyer_pubkey_hash = 0;
+//!
+//! let htlc_script = script! {
+//!     OP_IF
+//!         OP_SHA256 <digest> OP_EQUALVERIFY OP_DUP OP_SHA256 <seller_pubkey_hash>
+//!     OP_ELSE
+//!         100 OP_CSV OP_DROP OP_DUP OP_HASH160 <buyer_pubkey_hash>
+//!     OP_ENDIF
+//!     OP_EQUALVERIFY
+//!     OP_CHECKSIG
+//! };
+//! ```
+//!
+//! **NOTE:** As of rustc 1.41, the Rust compiler prevents using procedural
+//! macros as expressions. To use this macro you'll need to be on nightly and
+//! add `#![feature(proc_macro_hygiene)]` to the root of your crate. This will
+//! be stablized in the near future, the PR can be found here:
+//! https://github.com/rust-lang/rust/pull/68717
+//!
+//! ### Syntax
+//!
+//! Scripts are based on the standard syntax made up of opcodes, base-10
+//! integers, or hex string literals. Additionally, Rust expressions can be
+//! interpolated in order to support dynamically capturing Rust variables or
+//! computing values (delimited by `<angle brackets>`).
+//!
+//! Whitespace is ignored - scripts can be formatted in the author's preferred
+//! style.
+//!
+//! #### Opcodes
+//!
+//! All normal opcodes are available, in the form `OP_X`.
+//!
+//! ```rust
+//! # use bitcoin_script::{script, define_pushable};
+//! # define_pushable!();
+//! let script = script!(OP_CHECKSIG OP_VERIFY);
+//! ```
+//!
+//! #### Integer Literals
+//!
+//! Positive and negative 64-bit integer literals can be used, and will resolve to their most efficient encoding.
+//!
+//! For example:
+//! -`2` will resolve to `OP_PUSHNUM_2` (`0x52`)
+//! -`255` will resolve to a length-delimited varint: `0x02ff00` (note the extra zero byte, due to the way Bitcoin scripts use the most-significant bit to represent the sign)`
+//!
+//! ```rust
+//! # use bitcoin_script::{script, define_pushable};
+//! # define_pushable!();
+//! let script = script!(123 -456 999999);
+//! ```
+//!
+//! #### Hex Literals
+//!
+//! Hex strings can be specified, prefixed with `0x`.
+//!
+//! ```rust
+//! # use bitcoin_script::{script, define_pushable};
+//! # define_pushable!();
+//! let script = script!(
+//!     0x0102030405060708090a0b0c0d0e0f OP_HASH160
+//! );
+//! ```
+//!
+//! #### Escape Sequences
+//!
+//! Dynamic Rust expressions are supported inside the script, surrounded by rust delimiters (e.g. "{ }" or "( )"), angle brackets ("< >") or tilde ("~ ~"). In many cases, this will just be a variable identifier, but this can also be a function call, closure or arithmetic.
+//!
+//! Rust expressions of the following types are supported:
+//!
+//! - `i64`, `i32`, `u32`,
+//! - `Vec<u8>`
+//! - [`bitcoin::PublicKey`](https://docs.rs/bitcoin/latest/bitcoin/struct.PublicKey.html)
+//! - [`bitcoin::ScriptBuf`](https://docs.rs/bitcoin/latest/bitcoin/blockdata/script/struct.ScriptBuf.html)
+//! - And Vec<> variants of all the above types
+//!
+//!
+//! ```rust
+//! # use bitcoin_script::{script, define_pushable};
+//! # define_pushable!();
+//! let bytes = vec![1, 2, 3];
+//!
+//! let script = script! {
+//!     <bytes> OP_CHECKSIGVERIFY
+//!
+//!     <2016 * 5> OP_CSV
+//! };
+//! ```
+
+mod generate;
+mod parse;
+
+use generate::generate;
+use parse::parse;
+use proc_macro::TokenStream;
+use proc_macro_error::{proc_macro_error, set_dummy};
+use quote::quote;
+
+#[proc_macro]
+#[proc_macro_error]
+pub fn script(tokens: TokenStream) -> TokenStream {
+    set_dummy(quote!((::bitcoin::Script::new())));
+    generate(parse(tokens.into())).into()
 }
 
-use core::fmt;
-use std::{cmp::min, fs::File, io::Write};
+#[proc_macro]
+pub fn define_pushable(_: TokenStream) -> TokenStream {
+    quote!(
+        pub mod pushable {
 
-use bitcoin::{hashes::Hash, hex::DisplayHex, Opcode, ScriptBuf, TapLeafHash, Transaction};
-use bitcoin_scriptexec::{Exec, ExecCtx, ExecError, ExecStats, Options, Stack, TxTemplate};
+            use bitcoin::blockdata::opcodes::{all::*, Opcode};
+            use bitcoin::blockdata::script::Builder as BitcoinBuilder;
+            use bitcoin::blockdata::script::{Instruction, PushBytes, PushBytesBuf, Script};
+            use std::convert::TryFrom;
 
-pub mod bigint;
-pub mod bn254;
-pub mod bridge;
-pub mod fflonk;
-pub mod groth16;
-pub mod hash;
-pub mod pseudo;
-pub mod signatures;
-pub mod u32;
-pub mod u4;
+            pub struct Builder(pub BitcoinBuilder);
 
-/// A wrapper for the stack types to print them better.
-pub struct FmtStack(Stack);
-impl fmt::Display for FmtStack {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut iter = self.0.iter_str().enumerate().peekable();
-        write!(f, "\n0:\t\t ")?;
-        while let Some((index, mut item)) = iter.next() {
-            if item.is_empty() {
-                write!(f, "    []    ")?;
-            } else {
-            item.reverse();
-            write!(f, "0x{:8}", item.as_hex())?;
-            }
-            if iter.peek().is_some() {
-                if (index + 1) % f.width().unwrap_or(4) == 0 {
-                    write!(f, "\n{}:\t\t", index + 1)?;
+            impl Builder {
+                pub fn new() -> Self {
+                    let builder = BitcoinBuilder::new();
+                    Builder(builder)
                 }
-                write!(f, " ")?;
+
+                pub fn as_bytes(&self) -> &[u8] {
+                    self.0.as_bytes()
+                }
+
+                pub fn as_script(&self) -> &Script {
+                    self.0.as_script()
+                }
+
+                pub fn push_opcode(mut self, opcode: Opcode) -> Builder {
+                    self.0 = self.0.push_opcode(opcode);
+                    self
+                }
+
+                pub fn push_int(mut self, int: i64) -> Builder {
+                    self.0 = self.0.push_int(int);
+                    self
+                }
+
+                pub fn push_slice<T: AsRef<PushBytes>>(mut self, data: T) -> Builder {
+                    self.0 = self.0.push_slice(data);
+                    self
+                }
+
+                pub fn push_key(mut self, pub_key: &::bitcoin::PublicKey) -> Builder {
+                    self.0 = self.0.push_key(pub_key);
+                    self
+                }
+
+                pub fn push_x_only_key(
+                    mut self,
+                    x_only_key: &::bitcoin::XOnlyPublicKey,
+                ) -> Builder {
+                    self.0 = self.0.push_x_only_key(x_only_key);
+                    self
+                }
+
+                pub fn push_expression<T: Pushable>(self, expression: T) -> Builder {
+                    let builder = expression.bitcoin_script_push(self);
+                    builder
+                }
             }
-        }
-        Ok(())
-    }
-}
 
-impl FmtStack {
-    pub fn len(&self) -> usize { self.0.len() }
-
-    pub fn get(&self, index: usize) -> Vec<u8> { self.0.get(index) }
-}
-
-impl fmt::Debug for FmtStack {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct ExecuteInfo {
-    pub success: bool,
-    pub error: Option<ExecError>,
-    pub final_stack: FmtStack,
-    pub remaining_script: String,
-    pub last_opcode: Option<Opcode>,
-    pub stats: ExecStats,
-}
-
-impl fmt::Display for ExecuteInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.success {
-            writeln!(f, "Script execution successful.")?;
-        } else {
-            writeln!(f, "Script execution failed!")?;
-        }
-        if let Some(ref error) = self.error {
-            writeln!(f, "Error: {:?}", error)?;
-        }
-        if !self.remaining_script.is_empty() {
-            if self.remaining_script.len() < 500 {
-                writeln!(f, "Remaining Script: {}", self.remaining_script)?;
-            } else {
-                let mut string = self.remaining_script.clone();
-                string.truncate(500);
-                writeln!(f, "Remaining Script: {}...", string)?;
+            impl From<Vec<u8>> for Builder {
+                fn from(v: Vec<u8>) -> Builder {
+                    let builder = BitcoinBuilder::from(v);
+                    Builder(builder)
+                }
             }
-        }
-        if self.final_stack.len() > 0 {
-            match f.width() {
-                None => writeln!(f, "Final Stack: {:4}", self.final_stack)?,
-                Some(width) => {
-                    writeln!(f, "Final Stack: {:width$}", self.final_stack, width = width)?
+            // We split up the bitcoin_script_push function to allow pushing a single u8 value as
+            // an integer (i64), Vec<u8> as raw data and Vec<T> for any T: Pushable object that is
+            // not a u8. Otherwise the Vec<u8> and Vec<T: Pushable> definitions conflict.
+            trait NotU8Pushable {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder;
+            }
+            impl NotU8Pushable for i64 {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_int(self)
+                }
+            }
+            impl NotU8Pushable for i32 {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_int(self as i64)
+                }
+            }
+            impl NotU8Pushable for u32 {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_int(self as i64)
+                }
+            }
+            impl NotU8Pushable for usize {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_int(
+                        i64::try_from(self).unwrap_or_else(|_| panic!("Usize does not fit in i64")),
+                    )
+                }
+            }
+            impl NotU8Pushable for Vec<u8> {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_slice(PushBytesBuf::try_from(self).unwrap())
+                }
+            }
+            impl NotU8Pushable for ::bitcoin::PublicKey {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_key(&self)
+                }
+            }
+            impl NotU8Pushable for ::bitcoin::XOnlyPublicKey {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_x_only_key(&self)
+                }
+            }
+            impl NotU8Pushable for ::bitcoin::ScriptBuf {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    let mut script_vec =
+                        Vec::with_capacity(builder.0.as_bytes().len() + self.as_bytes().len());
+                    script_vec.extend_from_slice(builder.as_bytes());
+                    script_vec.extend_from_slice(self.as_bytes());
+                    Builder::from(script_vec)
+                }
+            }
+            impl<T: NotU8Pushable> NotU8Pushable for Vec<T> {
+                fn bitcoin_script_push(self, mut builder: Builder) -> Builder {
+                    for pushable in self {
+                        builder = pushable.bitcoin_script_push(builder);
+                    }
+                    builder
+                }
+            }
+            pub trait Pushable {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder;
+            }
+            impl<T: NotU8Pushable> Pushable for T {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    NotU8Pushable::bitcoin_script_push(self, builder)
+                }
+            }
+
+            impl Pushable for u8 {
+                fn bitcoin_script_push(self, builder: Builder) -> Builder {
+                    builder.push_int(self as i64)
                 }
             }
         }
-        if let Some(ref opcode) = self.last_opcode {
-            writeln!(f, "Last Opcode: {:?}", opcode)?;
-        }
-        writeln!(f, "Stats: {:?}", self.stats)?;
-        Ok(())
-    }
-}
-
-pub fn execute_script(script: treepp::Script) -> ExecuteInfo {
-    let mut exec = Exec::new(
-        ExecCtx::Tapscript,
-        Options::default(),
-        TxTemplate {
-            tx: Transaction {
-                version: bitcoin::transaction::Version::TWO,
-                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                input: vec![],
-                output: vec![],
-            },
-            prevouts: vec![],
-            input_idx: 0,
-            taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
-        },
-        script.compile(),
-        vec![],
     )
-    .expect("error creating exec");
-
-    loop {
-        if exec.exec_next().is_err() {
-            break;
-        }
-    }
-    let res = exec.result().unwrap();
-    ExecuteInfo {
-        success: res.success,
-        error: res.error.clone(),
-        last_opcode: res.opcode,
-        final_stack: FmtStack(exec.stack().clone()),
-        remaining_script: exec.remaining_script().to_asm_string(),
-        stats: exec.stats().clone(),
-    }
-}
-
-pub fn run(script: treepp::Script) {
-    let exec_result = execute_script(script);
-    if !exec_result.success {
-        println!(
-            "ERROR: {:?} <--- \n STACK: {:4} ",
-            exec_result.last_opcode, exec_result.final_stack
-        );
-    }
-    assert!(exec_result.success);
-}
-
-// Execute a script on stack without `MAX_STACK_SIZE` limit.
-// This function is only used for script test, not for production.
-//
-// NOTE: Only for test purposes.
-pub fn execute_script_without_stack_limit(script: treepp::Script) -> ExecuteInfo {
-    // Get the default options for the script exec.
-    let mut opts = Options::default();
-    // Do not enforce the stack limit.
-    opts.enforce_stack_limit = false;
-
-    let mut exec = Exec::new(
-        ExecCtx::Tapscript,
-        opts,
-        TxTemplate {
-            tx: Transaction {
-                version: bitcoin::transaction::Version::TWO,
-                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                input: vec![],
-                output: vec![],
-            },
-            prevouts: vec![],
-            input_idx: 0,
-            taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
-        },
-        script.compile(),
-        vec![],
-    )
-    .expect("error creating exec");
-
-    loop {
-        if exec.exec_next().is_err() {
-            break;
-        }
-    }
-    let res = exec.result().unwrap();
-    ExecuteInfo {
-        success: res.success,
-        error: res.error.clone(),
-        last_opcode: res.opcode,
-        final_stack: FmtStack(exec.stack().clone()),
-        remaining_script: exec.remaining_script().to_asm_string(),
-        stats: exec.stats().clone(),
-    }
-}
-
-// TODO: Use signatures to copy over the stack from one chunk to the next.
-pub fn execute_script_as_chunks(
-    script: treepp::Script,
-    target_chunk_size: usize,
-    tolerance: usize,
-) -> ExecuteInfo {
-    let (chunk_sizes, scripts) = script
-        .clone()
-        .compile_to_chunks(target_chunk_size, tolerance);
-    // TODO: Remove this when we are sure we are in script size limit for groth16
-    // Get the default options for the script exec.
-    let mut opts = Options::default();
-    // Do not enforce the stack limit.
-    opts.enforce_stack_limit = false;
-
-    assert!(scripts.len() > 0, "No chunks to execute");
-    let mut stats_file = File::create("chunk_stats.txt").expect("Unable to create stats file");
-    writeln!(stats_file, "chunk sizes: {:?}", chunk_sizes).expect("Unable to write to stats file");
-    let num_chunks = scripts.len();
-    let mut scripts = scripts.into_iter();
-    let mut final_exec = None; // Only used to not initialize an obsolote Exec
-    let mut next_stack = Stack::new();
-    let mut next_altstack = Stack::new();
-    let mut chunk_stacks = vec![];
-
-    // Execute each chunk and copy over the stacks
-    for i in 0..num_chunks {
-        // Note: Exec::with_stack() currently overwrites the witness!
-        let mut exec = Exec::with_stack(
-            ExecCtx::Tapscript,
-            opts.clone(),
-            TxTemplate {
-                tx: Transaction {
-                    version: bitcoin::transaction::Version::TWO,
-                    lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                    input: vec![],
-                    output: vec![],
-                },
-                prevouts: vec![],
-                input_idx: 0,
-                taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
-            },
-            scripts.next().unwrap_or_else(|| unreachable!()),
-            vec![], // Note: If you put a witness here make sure to adjust
-                                    // Exec::with_stack() to not overwrite it!
-            next_stack.clone(),
-            next_altstack.clone(),
-        )
-        .expect("Failed to create Exec");
-        
-        // Execute the current chunk.
-        while exec.exec_next().is_ok() {
-        }
-
-        if exec.result().unwrap().error.is_some() {
-            let res = exec.result().unwrap();
-            println!("Exec errored in chunk {}", i);
-            return ExecuteInfo {
-                success: res.success,
-                error: res.error.clone(),
-                last_opcode: res.opcode,
-                final_stack: FmtStack(exec.stack().clone()),
-                remaining_script: exec.remaining_script().to_asm_string(),
-                stats: exec.stats().clone(),
-            }
-        };
-
-        chunk_stacks.push(exec.stack().len() + exec.altstack().len());
-        // Copy over the stack for next iteration.
-        // TODO: Take the stack snapshot at the end of the chunk logic (before the stack is hashed and
-        // then dropped) BUT AFTER THE ALSTACK IS MOVED TO STACK
-        next_stack = exec.stack().clone();
-        // TODO: altstack should be empty
-        // TODO: Next altstack is generated from the stack entries
-        next_altstack = exec.altstack().clone();
-        final_exec = Some(exec);
-    }
-    let final_exec = final_exec.unwrap_or_else(|| unreachable!());
-    let res = final_exec.result().unwrap();
-    writeln!(stats_file,
-        "intermediate stack transfer sizes: {:?}",
-        chunk_stacks[0..chunk_stacks.len() - 1].to_vec()
-    ).expect("Unable to write into stats_file");
-    ExecuteInfo {
-        success: res.success,
-        error: res.error.clone(),
-        last_opcode: res.opcode,
-        final_stack: FmtStack(final_exec.stack().clone()),
-        remaining_script: final_exec.remaining_script().to_asm_string(),
-        stats: final_exec.stats().clone(),
-    }
-}
-
-
-pub fn execute_script_as_chunks_vs_normal(
-    script: treepp::Script,
-    target_chunk_size: usize,
-    tolerance: usize,
-) -> ExecuteInfo {
-    let (chunk_sizes, scripts) = script
-        .clone()
-        .compile_to_chunks(target_chunk_size, tolerance);
-    let compiled_script = script.compile();
-    let mut total_script = vec![];
-    for script in &scripts {
-        total_script.extend(script.clone().into_bytes());
-    }
-    println!("chunk sizes: {:?}", chunk_sizes);
-    
-    for i in 0..min(compiled_script.len(), total_script.len()) {
-        assert_eq!(compiled_script.as_bytes()[i], total_script[i], "Incorrect at position {}: compiled: {} total: {}", i, compiled_script.as_bytes()[i], total_script[i]);
-    }
-    //assert!(
-    //    compiled_script.as_bytes() == total_script,
-    //    "Total chunk script is not same as compiled script {:?}, {:?}", compiled_script.len(), total_script.len()
-    //);
-
-    assert!(scripts.len() > 0, "No chunks to execute");
-    let num_chunks = scripts.len();
-    let mut scripts = scripts.into_iter();
-    let mut final_exec = None; // Only used to not initialize an obsolote Exec
-    let mut next_stack = Stack::new();
-    let mut next_altstack = Stack::new();
-    let mut chunk_stacks = vec![];
-    let mut compiled_exec = Exec::new(
-        ExecCtx::Tapscript,
-        Options::default(),
-        TxTemplate {
-            tx: Transaction {
-                version: bitcoin::transaction::Version::TWO,
-                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                input: vec![],
-                output: vec![],
-            },
-            prevouts: vec![],
-            input_idx: 0,
-            taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
-        },
-        compiled_script,
-        vec![], // Note: If you put a witness here make sure to adjust
-                // Exec::with_stack() to not overwrite it!
-    )
-    .expect("Failed to create Exec");
-
-    // Execute each chunk and copy over the stacks
-    for i in 0..num_chunks {
-        // Note: Exec::with_stack() currently overwrites the witness!
-        let mut exec = Exec::with_stack(
-            ExecCtx::Tapscript,
-            Options::default(),
-            TxTemplate {
-                tx: Transaction {
-                    version: bitcoin::transaction::Version::TWO,
-                    lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                    input: vec![],
-                    output: vec![],
-                },
-                prevouts: vec![],
-                input_idx: 0,
-                taproot_annex_scriptleaf: Some((TapLeafHash::all_zeros(), None)),
-            },
-            scripts.next().unwrap_or_else(|| unreachable!()),
-            vec![], // Note: If you put a witness here make sure to adjust
-            // Exec::with_stack() to not overwrite it!
-            next_stack.clone(),
-            next_altstack.clone(),
-        )
-        .expect("Failed to create Exec");
-
-        // Execute the current chunk.
-        while exec.exec_next().is_ok() {
-            // Execute the compiled script in parallel.
-            if compiled_exec.exec_next().is_err() {
-                println!("compiled_exec error: {:?}", compiled_exec.result());
-                panic!("Errored with compiled_exec");
-            }
-            assert_eq!(
-                exec.stack(),
-                compiled_exec.stack(),
-                "Stack not equal to compiled_exec {:?}\n{:?} \n -- in chunk: {}",
-                compiled_exec.stats(),
-                exec.stats(),
-                i
-            );
-            assert_eq!(
-                exec.altstack(),
-                compiled_exec.altstack(),
-                "Altstack not equal to compiled_exec {:?}\n{:?}",
-                compiled_exec.stats(),
-                exec.stats()
-            );
-        }
-
-        if exec.result().unwrap().error.is_some() {
-            let res = exec.result().unwrap();
-            println!("Exec errored in chunk {}", i);
-            println!(
-                "intermediate stack transfer sizes: {:?}",
-                chunk_stacks[0..chunk_stacks.len() - 1].to_vec()
-            );
-            return ExecuteInfo {
-                success: res.success,
-                error: res.error.clone(),
-                last_opcode: res.opcode,
-                final_stack: FmtStack(exec.stack().clone()),
-                remaining_script: exec.remaining_script().to_asm_string(),
-                stats: exec.stats().clone(),
-            }
-        };
-
-        chunk_stacks.push(exec.stack().len() + exec.altstack().len());
-        // Copy over the stack for next iteration.
-        next_stack = exec.stack().clone();
-        next_altstack = exec.altstack().clone();
-        final_exec = Some(exec);
-    }
-    let final_exec = final_exec.unwrap_or_else(|| unreachable!());
-    let res = final_exec.result().unwrap();
-    println!(
-        "intermediate stack transfer sizes: {:?}",
-        chunk_stacks[0..chunk_stacks.len() - 1].to_vec()
-    );
-    ExecuteInfo {
-        success: res.success,
-        error: res.error.clone(),
-        last_opcode: res.opcode,
-        final_stack: FmtStack(final_exec.stack().clone()),
-        remaining_script: final_exec.remaining_script().to_asm_string(),
-        stats: final_exec.stats().clone(),
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::bn254;
-    use crate::bn254::fp254impl::Fp254Impl;
-    use crate::execute_script_as_chunks;
-
-    use super::execute_script_without_stack_limit;
-    use super::treepp::*;
-
-    #[test]
-    fn test_script_debug() {
-        let script = script! {
-            OP_TRUE
-            DEBUG
-            OP_TRUE
-            OP_VERIFY
-        };
-        let exec_result = execute_script(script);
-        assert!(!exec_result.success);
-    }
-
-    #[test]
-    fn test_script_execute() {
-        let script = script! {
-            for i in 0..36 {
-                { 0x0babe123 + i }
-            }
-        };
-        let exec_result = execute_script(script);
-        // The width decides how many stack elements are printed per row
-        println!(
-            "{:width$}",
-            exec_result,
-            width = bn254::fq::Fq::N_LIMBS as usize
-        );
-        println!("{:4}", exec_result);
-        println!("{}", exec_result);
-        assert!(!exec_result.success);
-        assert_eq!(exec_result.error, None);
-    }
-
-    #[test]
-    fn test_execute_script_without_stack_limit() {
-        let script = script! {
-            for _ in 0..1001 {
-                OP_1
-            }
-            for _ in 0..1001 {
-                OP_DROP
-            }
-            OP_1
-        };
-        let exec_result = execute_script_without_stack_limit(script);
-        assert!(exec_result.success);
-    }
-
-    #[test]
-    fn test_execute_script_as_chunks() {
-        let sub_script = script! {
-            OP_1
-            OP_1
-        };
-        let sub_script_2 = script! {
-            OP_DROP
-            OP_DROP
-        };
-
-        let script = script! {
-            { sub_script.clone() }
-            { sub_script.clone() }
-            { sub_script.clone() }
-            { sub_script.clone() }
-            { sub_script_2.clone() }
-            { sub_script_2.clone() }
-            { sub_script_2.clone() }
-            { sub_script_2.clone() }
-            OP_1
-        };
-        let exec_result = execute_script_as_chunks(script, 2, 0);
-        println!("{:?}", exec_result);
-        assert!(exec_result.success);
-    }
+    .into()
 }
